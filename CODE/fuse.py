@@ -13,7 +13,7 @@ from tqdm import tqdm;
 
 # -- FUNCTIONS
 
-def resize_to_fit(
+def get_resized_image(
     image_path: str,
     target_size: int = 1024
     ):
@@ -79,32 +79,30 @@ def setup_pipeline(
 
         checkpoint_name = "sdxl_lightning_8step_unet.safetensors";
 
-    pipeline = StableDiffusionXLImg2ImgPipeline.from_pretrained(
-        base_model,
-        torch_dtype = torch.float16,
-        variant = "fp16"
-    );
+    pipeline = (
+        StableDiffusionXLImg2ImgPipeline.from_pretrained(
+            base_model,
+            torch_dtype = torch.float16,
+            variant = "fp16"
+            )
+        );
 
     checkpoint_path = hf_hub_download( lightning_model, checkpoint_name );
 
     state_dict = load_file( checkpoint_path, device = "cuda" );
     pipeline.unet.load_state_dict( state_dict );
-
     pipeline.unet = pipeline.unet.to( dtype = torch.float16 );
-
     pipeline.scheduler = (
         EulerDiscreteScheduler.from_config(
             pipeline.scheduler.config,
             timestep_spacing = "trailing"
             )
         );
-
     pipeline.enable_attention_slicing();
     pipeline.enable_vae_slicing();
     pipeline.enable_vae_tiling();
     pipeline.enable_model_cpu_offload();
 
-    print( "Model loaded successfully" );
     return pipeline;
 
 # ~~
@@ -118,9 +116,9 @@ def process_image(
     step_count: int
     ):
 
-    init_image = resize_to_fit( image_path );
+    resized_image = get_resized_image( image_path );
 
-    if init_image is None:
+    if resized_image is None:
 
         return;
 
@@ -132,17 +130,17 @@ def process_image(
 
         seed = random.randint( 1, 999999 );
         generator = torch.Generator( device = "cpu" ).manual_seed( seed );
-        result = (
+        image = (
             pipeline(
                 prompt = prompt,
-                image = init_image,
+                image = resized_image,
                 strength = strength,
                 num_inference_steps = step_count,
                 guidance_scale = 1.0,
                 generator = generator
                 ).images[ 0 ]
             );
-        result.save( output_path, quality = 95 );
+        image.save( output_path, quality = 95 );
         print( f"Saved: {output_path}" );
 
     except Exception as exception:
